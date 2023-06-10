@@ -24,6 +24,8 @@ RUN pip install --upgrade pip
 
 COPY ./requirements.txt $APP_HOME/requirements.txt
 
+COPY ./local_run.sh $APP_HOME/local_run.sh
+
 RUN pip3 install -r requirements.txt
 
-CMD ["python3", "cageGPT.py"]
+CMD ["bash", "local_run.sh"]

@@ -22,7 +22,7 @@ args.add_argument(
     "--device_type",
     type=str,
     default="cuda",
-    choices=["cuda", "cpu", "hip", "xla", "ort", "tpu", "mkldnn"],
+    choices=["cuda", "cpu", "hip"],
     help="The compute power that you have",
 )
 
