@@ -1,13 +1,16 @@
 langchain>=0.0.195
-chromadb==0.3.26
-
+# chromadb==0.3.26
+python-dotenv==1.0.0
 # pdfminer.six
 # huggingface-hub==0.15.1
-# transformers[torch]==4.30.1
-# protobuf==4.23.2
+transformers[torch]==4.30.1
+InstructorEmbedding
+sentence-transformers==2.2.2
+protobuf==4.23.2
+openai
 
-# urllib3==1.25.11
-# accelerate==0.20.3
-# bitsandbytes==0.39.0
+urllib3==1.25.11
+accelerate==0.20.3
+bitsandbytes==0.39.0
 
 # openpyxl==3.1.2

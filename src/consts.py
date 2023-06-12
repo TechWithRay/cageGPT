@@ -1,7 +1,7 @@
 import os
-
-from chromadb.config import Settings
-
+from dotenv import load_dotenv
+import pinecone
+from pathlib import Path
 from langchain.document_loaders import (
     CSVLoader,
     PDFMinerLoader,
@@ -10,19 +10,24 @@ from langchain.document_loaders import (
     UnstructuredWordDocumentLoader,
 )
 
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__)).parent
+load_dotenv()
 
+ROOT_DIR =  Path(__file__).resolve().parent.parent
 SOURCE_DIRECTORY = f"{ROOT_DIR}/data/source"
 
-PERSIST_DIRECTORY = f"{ROOT_DIR}/data/db"
+# load environment variables
+PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
+PINECONE_ENVIRONMENT = os.environ.get("PINECONE_ENVIRONMENT")
 
-# Define the Chroma settings
-CHROMA_SETTINGS = Settings(
-    chroma_db_impl="duckdb+parquet",
-    persist_directory=PERSIST_DIRECTORY,
-    anonymized_telemetry=False,
-)
+# initialize pinecone
+PINECONE_SETTINGS = {
+    "api_key": PINECONE_API_KEY,   # find at app.pinecone.io
+    "environment": PINECONE_ENVIRONMENT  # next to api key in console
+}
 
+pinecone_db = pinecone.init(**PINECONE_SETTINGS)
+
+# supported document types
 DOCUMENT_MAP = {
     ".txt": TextLoader,
     ".pdf": PDFMinerLoader,

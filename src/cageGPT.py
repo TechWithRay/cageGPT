@@ -1,76 +1,95 @@
+import os
 import argparse
-from langchain.chains import RetrievalQA
+import logging
+from langchain.docstore.document import Document
+from langchain.llms import OpenAI
 from langchain.embeddings import HuggingFaceInstructEmbeddings
-from langchain.llms import HuggingFacePipeline
-from langchain.vectorstores import Chroma
-from transformers import LlamaForCausalLM, LlamaTokenizer, pipeline
+from langchain.vectorstores import Pinecone
 from typing import List, Tuple, Union
-from consts import CHROMA_SETTINGS, PERSIST_DIRECTORY
+from consts import pinecone_db, DOCUMENT_MAP, SOURCE_DIRECTORY
+from langchain.chains.question_answering import load_qa_chain
+from dotenv import load_dotenv
+from langchain.chains import RetrievalQA
+import pinecone
+from langchain.docstore.document import Document
+from langchain.embeddings import HuggingFaceInstructEmbeddings
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
-args = args.parse_args()
+load_dotenv()
 
-args.ArgumentParser()
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
+PINECONE_ENVIRONMENT = os.environ.get("PINECONE_ENVIRONMENT")
 
-args.add_argument("--source_dir", type=str, default=SOURCE_DIRECTORY)
-args.add_argument("--persist_dir", type=str, default=PERSIST_DIRECTORY)
-args.add_argument(
+parser = argparse.ArgumentParser()
+
+parser.add_argument("--source_dir", type=str, default=SOURCE_DIRECTORY)
+parser.add_argument(
     "--device_type",
     type=str,
-    default="cuda",
-    choices=["cuda", "cpu", "hip", "xla", "ort", "tpu", "mkldnn"],
+    default="cpu",
+    choices=["cuda", "cpu", "hip"],
     help="The compute power that you have",
 )
 
 
-def load_model(device_type: str):
+def load_model():
     """
     Select a model from huggingface.
     """
+    language_model = OpenAI(model_name='text-davinci-003', openai_api_key=OPENAI_API_KEY)
+    
+    return language_model
 
-    model_id = "TheBloke/vicuna-7B-1.1-HF"
-    tokenizer = LlamaTokenizer.from_pretrained(model_id)
 
-    model = LlamaForCausalLM.from_pretrained(model_id)
+def get_similar_documents(index, query: str, k: int = 5) -> List[Document]:
 
-    logging.info(f"Loading model {model_id} on {device_type}")
-    pipe = pipeline(
-        "text-generation",
-        model=model,
-        tokenizer=tokenizer,
-        max_length=2048,
-        temperature=0,
-        top_p=0.95,
-        repetition_penalty=1.2,
-    )
+    similiar_docs = index.similarity_search(query, k=k)
 
-    cage_llm = HuggingFacePipeline(pipeline=pipe)
-
-    logging.info(f"cage_llm loaded on {device_type}")
-    return cage_llm
-
+    return similiar_docs
 
 def main():
+
+    args = parser.parse_args()
     logging.info(f"Running on: {args.device_type}")
 
-    embedding = HuggingFaceInstructEmbeddings(
-        # "hkunlp/instruct-large" model_name is default for the embeddings in langchain
-        model_name="hkunlp/instruct-large",
-        model_kwargs={"device": args.device_type},
+    documents = load_document(args.source_dir)
+
+    logging.info("Splitting documents into chunks and processing text")
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=10)
+    texts = text_splitter.split_documents(documents)
+
+    logging.info("Creating embedding for the documents")
+    embeddings = HuggingFaceInstructEmbeddings(
+        model_name="hkunlp/instructor-large", model_kwargs={"device": args.device_type}
     )
 
-    vectordb = Chroma(
-        persist_directory=PERSIST_DIRECTORY,
-        embedding_function=embedding,
-        client_settings=CHROMA_SETTINGS,
+    index_name = "flowise"
+
+    logging.info("Creating vectorstore API KEY: {}".format(PINECONE_API_KEY))
+    logging.info("Creating vectorstore ENVIRONMENT: {}".format(PINECONE_ENVIRONMENT))
+
+    PINECONE_SETTINGS = {
+        "api_key": PINECONE_API_KEY,   # find at app.pinecone.io
+        "environment": PINECONE_ENVIRONMENT,  # next to api key in console
+    }
+
+    pinecone.init(**PINECONE_SETTINGS)
+
+    vectorstore = Pinecone.from_existing_index(
+        index_name=index_name,
+        embedding=embeddings,
     )
 
-    retriever = vectordb.as_retrieval()
+    # query = "turing test"
+    # docs = vectorstore.similarity_search(query)
 
-    llm = load_model(args.device_type)
+    # print(docs)
 
-    qa = RetrievalQA.from_chain_type(
-        llm=llm, chain_type="stuff", retriever=retriever, return_source_documents=True
-    )
+    llm = load_model()
+    chain = load_qa_chain(llm, chain_type="stuff")
+    qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=vectorstore.as_retriever())
+
 
     with open("user_input.log", "w") as file:
         while True:
@@ -81,10 +100,12 @@ def main():
 
             if query == "quit":
                 break
-
+            
             # Get the answer from the QA
-            res = qa(query)
-            answer, docs = res["result"], res["source_documents"]
+            # res = get_similar_documents(index, query)
+            # answer = chain.run(input_document=similar_docs, question=query)
+
+            answer = qa.run(query=query)
 
             # Print the answer
             print(f"\n\n > Question:")
@@ -92,15 +113,14 @@ def main():
             print(f"\n\n > Answer:")
             print(answer)
 
-            ## Print the relevant sources used for the answer
-            print("---------------------SOURCE DOCUMENTS---------------------")
-
-            for document in docs:
-                print("\n> " + document.metadata["source"] + ":")
-                print(document.page_content)
-
-            print("---------------------SOURCE DOCUMENT---------------------")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        logging.basicConfig(
+            format="%(asctime)s - %(levelname)s - %(name)s - %(message)s", level=logging.INFO
+        )
+        main()
+    except:
+        raise RuntimeError("Something went wrong")
+

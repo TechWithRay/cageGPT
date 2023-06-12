@@ -2,23 +2,18 @@ import os
 from typing import List, Tuple, Union
 import logging
 
-from langchain.document import Document
+from langchain.docstore.document import Document
 from langchain.embeddings import HuggingFaceInstructEmbeddings
-from langchain.text_splitter import RecursiveCharactorSplitter
-from langchain.vectorstores import Chroma
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.vectorstores import Pinecone
 
-from consts import CHROMA_SETTINGS, DOCUMENT_MAP, PERSIST_DIRECTORY, SOURCE_DIRECTORY
+from consts import pinecone_db, DOCUMENT_MAP, SOURCE_DIRECTORY
 import argparse
 
-logging = logging.getLogger(__name__)
-logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s", level=logging.INFO
-)
 
-args = argparse.ArgumentParser()
-args.add_argument("--source_dir", type=str, default=SOURCE_DIRECTORY)
-args.add_argument("--persist_dir", type=str, default=PERSIST_DIRECTORY)
-args.add_argument(
+parser = argparse.ArgumentParser()
+parser.add_argument("--source_dir", type=str, default=SOURCE_DIRECTORY)
+parser.add_argument(
     "--device_type",
     type=str,
     default="cuda",
@@ -62,30 +57,30 @@ def load_document(source_dir: str) -> List[Document]:
 
 
 def main():
-    args = args.parse_args()
+    args = parser.parse_args()
 
     logging.info("Loading documents from {args.source_dir}")
     documents = load_document(args.source_dir)
 
     logging.info("Splitting documents into chunks and processing text")
-    text_splitter = RecursiveCharactorSplitter(chunk_size=1000, chunk_overlap=100)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=10)
     texts = text_splitter.split_documents(documents)
 
     logging.info("Creating embedding for the documents")
     embeddings = HuggingFaceInstructEmbeddings(
         model_name="hkunlp/instructor-large", model_kwargs={"device": args.device_type}
     )
-    # Create a vector store
-    db = Chroma.from_documents(
+
+    index_name = "flowise"
+    # Create a vector store index
+    db = Pinecone.from_documents(
         texts,
         embeddings,
-        persist_directory=args.persist_dir,
-        client_settings=CHROMA_SETTINGS,
+        index_name=index_name,
     )
 
-    db.persist()
     db = None
 
-
 if __name__ == "__main__":
+    logging.basicConfig( format="%(asctime)s - %(levelname)s - %(name)s - %(message)s", level=logging.INFO)
     main()
